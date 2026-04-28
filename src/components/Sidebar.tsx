@@ -6,7 +6,8 @@ import {
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
 
-export const NAV_ITEMS = [
+type NavItem = { to: string; label: string; icon: typeof LayoutDashboard; exact?: boolean; superOnly?: boolean };
+export const NAV_ITEMS: NavItem[] = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { to: "/sales-orders", label: "Sales Orders", icon: ClipboardList },
   { to: "/material", label: "Material Control", icon: Boxes },
@@ -16,7 +17,7 @@ export const NAV_ITEMS = [
   { to: "/master", label: "Master Data", icon: Database, superOnly: true },
   { to: "/users", label: "Users", icon: Users, superOnly: true },
   { to: "/settings", label: "Settings", icon: Settings },
-] as const;
+];
 
 export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const path = useRouterState({ select: (s) => s.location.pathname });
@@ -39,7 +40,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           return (
             <Link
               key={item.to}
-              to={item.to}
+              to={item.to as string}
               onClick={onNavigate}
               className={cn(
                 "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
