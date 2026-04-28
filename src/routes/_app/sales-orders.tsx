@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -6,11 +6,13 @@ import { PageHeader } from "@/components/PageHeader";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SoStatusBadge, PriorityBadge } from "@/components/StatusBadge";
 import { fmtNum, fmtDate } from "@/lib/format";
-import type { SoStatus, SoPriority } from "@/lib/status";
-import { Search, Plus } from "lucide-react";
+import { SO_STATUS_LABEL, type SoStatus, type SoPriority } from "@/lib/status";
+import { Search, Plus, Pencil } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
+import { SalesOrderDialog } from "@/components/dialogs/SalesOrderDialog";
 
 export const Route = createFileRoute("/_app/sales-orders")({ component: SalesOrdersPage });
 
@@ -24,6 +26,10 @@ type Row = {
 function SalesOrdersPage() {
   const { isSuper } = useAuth();
   const [q, setQ] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+
   const { data = [], isLoading } = useQuery({
     queryKey: ["sales-orders"],
     queryFn: async () => {
@@ -36,24 +42,38 @@ function SalesOrdersPage() {
     },
   });
 
-  const filtered = data.filter(r =>
-    !q || r.so_number.toLowerCase().includes(q.toLowerCase()) ||
-    r.customers?.name.toLowerCase().includes(q.toLowerCase()) ||
-    r.product_name?.toLowerCase().includes(q.toLowerCase())
-  );
+  const filtered = data.filter(r => {
+    if (statusFilter !== "all" && r.status !== statusFilter) return false;
+    if (!q) return true;
+    const t = q.toLowerCase();
+    return r.so_number.toLowerCase().includes(t)
+      || (r.customers?.name ?? "").toLowerCase().includes(t)
+      || (r.product_name ?? "").toLowerCase().includes(t);
+  });
+
+  function openNew() { setEditingId(null); setDialogOpen(true); }
+  function openEdit(id: string) { setEditingId(id); setDialogOpen(true); }
 
   return (
     <div className="space-y-5">
       <PageHeader
         title="Sales Orders"
         description="Daftar seluruh sales order dan progresnya."
-        actions={isSuper ? <Button><Plus className="mr-2 size-4" />Tambah SO</Button> : undefined}
+        actions={isSuper ? <Button onClick={openNew}><Plus className="mr-2 size-4" />Tambah SO</Button> : undefined}
       />
-      <Card className="p-4 shadow-soft">
-        <div className="relative max-w-sm">
+      <Card className="flex flex-wrap items-center gap-3 p-4 shadow-soft">
+        <div className="relative max-w-sm flex-1">
           <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari SO/customer/produk…" className="pl-9" />
         </div>
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Semua Status</SelectItem>
+            {(Object.keys(SO_STATUS_LABEL) as SoStatus[]).map(s => <SelectItem key={s} value={s}>{SO_STATUS_LABEL[s]}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <span className="text-xs text-muted-foreground">{filtered.length} dari {data.length}</span>
       </Card>
       <Card className="overflow-hidden shadow-soft">
         <div className="hidden md:block overflow-x-auto">
@@ -68,10 +88,11 @@ function SalesOrdersPage() {
                 <th className="px-4 py-3 text-left">Delivery</th>
                 <th className="px-4 py-3 text-left">Priority</th>
                 <th className="px-4 py-3 text-left">Status</th>
+                <th className="px-4 py-3" />
               </tr>
             </thead>
             <tbody>
-              {isLoading && <tr><td colSpan={8} className="p-8 text-center text-muted-foreground">Loading…</td></tr>}
+              {isLoading && <tr><td colSpan={9} className="p-8 text-center text-muted-foreground">Loading…</td></tr>}
               {!isLoading && filtered.map(r => (
                 <tr key={r.id} className="border-t hover:bg-muted/30">
                   <td className="px-4 py-3 font-medium">{r.so_number}</td>
@@ -82,15 +103,18 @@ function SalesOrdersPage() {
                   <td className="px-4 py-3">{fmtDate(r.delivery_date)}</td>
                   <td className="px-4 py-3"><PriorityBadge priority={r.priority} /></td>
                   <td className="px-4 py-3"><SoStatusBadge status={r.status} /></td>
+                  <td className="px-4 py-3 text-right">
+                    <Button variant="ghost" size="sm" onClick={() => openEdit(r.id)}><Pencil className="size-4" /></Button>
+                  </td>
                 </tr>
               ))}
-              {!isLoading && filtered.length === 0 && <tr><td colSpan={8} className="p-8 text-center text-muted-foreground">Tidak ada data</td></tr>}
+              {!isLoading && filtered.length === 0 && <tr><td colSpan={9} className="p-8 text-center text-muted-foreground">Tidak ada data</td></tr>}
             </tbody>
           </table>
         </div>
         <div className="divide-y md:hidden">
           {filtered.map(r => (
-            <div key={r.id} className="space-y-2 p-4">
+            <button key={r.id} onClick={() => openEdit(r.id)} className="w-full space-y-2 p-4 text-left hover:bg-muted/30">
               <div className="flex items-start justify-between">
                 <div>
                   <div className="font-semibold">{r.so_number}</div>
@@ -106,11 +130,11 @@ function SalesOrdersPage() {
                 <span>Delivery: {fmtDate(r.delivery_date)}</span>
                 <span className="tabular-nums">{fmtNum(r.qty_produced)} / {fmtNum(r.qty_order)}</span>
               </div>
-            </div>
+            </button>
           ))}
         </div>
       </Card>
-      <p className="text-xs text-muted-foreground">Tip: form tambah/edit SO + import Excel + duplicate akan ditambahkan pada iterasi berikutnya. Lihat detail SO via <Link to="/planning" className="text-primary underline">Planning</Link>.</p>
+      <SalesOrderDialog open={dialogOpen} onOpenChange={setDialogOpen} soId={editingId} />
     </div>
   );
 }

@@ -1,10 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { PageHeader } from "@/components/PageHeader";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { fmtDate, fmtNum } from "@/lib/format";
-import { GripVertical } from "lucide-react";
+import { Plus, Pencil } from "lucide-react";
+import { useAuth } from "@/lib/auth-context";
+import { PlanningDialog } from "@/components/dialogs/PlanningDialog";
 
 export const Route = createFileRoute("/_app/planning")({ component: PlanningPage });
 
@@ -16,6 +20,10 @@ type Plan = {
 };
 
 function PlanningPage() {
+  const { isSuper } = useAuth();
+  const [open, setOpen] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+
   const plans = useQuery({
     queryKey: ["plans"],
     queryFn: async () => {
@@ -29,11 +37,7 @@ function PlanningPage() {
   });
   const machines = useQuery({
     queryKey: ["machines-active"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("machines").select("id, code, name").eq("active", true).order("code");
-      if (error) throw error;
-      return data;
-    },
+    queryFn: async () => (await supabase.from("machines").select("id, code, name").eq("active", true).order("code")).data,
   });
 
   const grouped = new Map<string, Plan[]>();
@@ -43,9 +47,16 @@ function PlanningPage() {
     grouped.get(key)!.push(p);
   });
 
+  function openNew() { setEditId(null); setOpen(true); }
+  function openEdit(id: string) { setEditId(id); setOpen(true); }
+
   return (
     <div className="space-y-5">
-      <PageHeader title="Planning Board" description="Jadwal produksi dikelompokkan per mesin." />
+      <PageHeader
+        title="Planning Board"
+        description="Jadwal produksi dikelompokkan per mesin."
+        actions={isSuper ? <Button onClick={openNew}><Plus className="mr-2 size-4" />Tambah</Button> : undefined}
+      />
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {(machines.data ?? []).map(m => {
           const items = grouped.get(m.id) ?? [];
@@ -61,27 +72,33 @@ function PlanningPage() {
               <div className="flex-1 space-y-2 p-3">
                 {items.length === 0 && <div className="rounded-md border border-dashed p-6 text-center text-xs text-muted-foreground">Belum ada planning</div>}
                 {items.map(p => (
-                  <div key={p.id} className="group flex items-start gap-2 rounded-lg border bg-card p-3 transition-colors hover:border-primary/40">
-                    <GripVertical className="mt-0.5 size-4 text-muted-foreground" />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="font-medium text-sm">{p.sales_orders?.so_number}</div>
-                        <span className="text-[10px] uppercase text-muted-foreground">#{p.priority_rank}</span>
-                      </div>
-                      <div className="truncate text-xs text-muted-foreground">{p.sales_orders?.customers?.name} · {p.sales_orders?.product_name}</div>
-                      <div className="mt-1 flex items-center justify-between text-xs">
-                        <span>{fmtDate(p.start_date)} → {fmtDate(p.finish_date)}</span>
-                        <span className="tabular-nums">{fmtNum(p.estimated_output)} pcs</span>
-                      </div>
+                  <button
+                    key={p.id}
+                    onClick={() => isSuper && openEdit(p.id)}
+                    className="group block w-full rounded-lg border bg-card p-3 text-left transition-colors hover:border-primary/40"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="font-medium text-sm">{p.sales_orders?.so_number}</div>
+                      <span className="text-[10px] uppercase text-muted-foreground">#{p.priority_rank} · {p.status}</span>
                     </div>
-                  </div>
+                    <div className="truncate text-xs text-muted-foreground">{p.sales_orders?.customers?.name} · {p.sales_orders?.product_name}</div>
+                    <div className="mt-1 flex items-center justify-between text-xs">
+                      <span>{fmtDate(p.start_date)} → {fmtDate(p.finish_date)}</span>
+                      <span className="tabular-nums">{fmtNum(p.estimated_output)} pcs</span>
+                    </div>
+                    {isSuper && (
+                      <div className="mt-1 flex items-center text-[11px] text-primary opacity-0 transition-opacity group-hover:opacity-100">
+                        <Pencil className="mr-1 size-3" /> Edit
+                      </div>
+                    )}
+                  </button>
                 ))}
               </div>
             </Card>
           );
         })}
       </div>
-      <p className="text-xs text-muted-foreground">Drag-and-drop untuk re-prioritize akan ditambahkan di iterasi berikut. Saat ini menampilkan view-only board per mesin.</p>
+      <PlanningDialog open={open} onOpenChange={setOpen} planId={editId} />
     </div>
   );
 }
